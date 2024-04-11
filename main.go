@@ -38,7 +38,7 @@ func main() {
 	// Register the messageCreate func as a callback for MessageCreate events.
 	dg.AddHandler(messageCreate)
 	// In this example, we only care about receiving message events.
-	dg.Identify.Intents = discordgo.IntentsGuildMessages
+	dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages
 
 	// Open a websocket connection to Discord and begin listening.
 	err = dg.Open()
@@ -54,27 +54,9 @@ func main() {
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 
-	/*
-		s := bufio.NewScanner(os.Stdin)
-		for s.Scan() {
-			req.Messages = append(req.Messages, openai.ChatCompletionMessage{
-				Role:    openai.ChatMessageRoleUser,
-				Content: s.Text(),
-			})
-			resp, err := client.CreateChatCompletion(context.Background(), req)
-			if err != nil {
-				fmt.Printf("ChatCompletion error: %v\n", err)
-				continue
-			}
-			fmt.Printf("%s\n\n", resp.Choices[0].Message.Content)
-			req.Messages = append(req.Messages, resp.Choices[0].Message)
-			fmt.Print("> ")
-		}
-	*/
 }
 
 type chatBot struct {
-	apiKey string
 	client openai.Client
 	req    openai.ChatCompletionRequest
 }
@@ -86,7 +68,7 @@ func (bot *chatBot) Init() error {
 	}
 	bot.client = *openai.NewClient(apiKey)
 	bot.req = openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: openai.GPT4,
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
@@ -150,6 +132,10 @@ func isTalkingToBot(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 		if referenceMessage.Author.ID == s.State.User.ID {
 			return true
 		}
+	}
+
+	if channel, _ := s.Channel(m.ChannelID); channel.Type == discordgo.ChannelTypeDM {
+		return true
 	}
 
 	return false
