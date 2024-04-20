@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"strings"
 
@@ -15,50 +13,19 @@ import (
 
 type IchatBot interface {
 	Init() error
+	Reply(prompt string) (string, error)
 	HandleReply(s *discordgo.Session, m *discordgo.MessageCreate)
 }
 
-type OpenAIChatBot struct {
-	client openai.Client
-	req    openai.ChatCompletionRequest
-}
-
-func (bot *OpenAIChatBot) Init() error {
-	apiKey := os.Getenv("OPENAI_API_KEY")
-	if apiKey == "" {
-		log.Fatal("OPENAI_API_KEY not found in .env file or environment variable")
-	}
-	bot.client = *openai.NewClient(apiKey)
-	bot.req = openai.ChatCompletionRequest{
-		Model: openai.GPT4Turbo,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: "you are a helpful chatbot",
-			},
-		},
-	}
-	return nil
-}
-
-func (bot *OpenAIChatBot) reply(prompt string) (string, error) {
-	bot.req.Messages = append(bot.req.Messages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: prompt,
-	})
-	resp, err := bot.client.CreateChatCompletion(context.Background(), bot.req)
-	if err != nil {
-		fmt.Printf("ChatCompletion error: %v\n", err)
-		return "", err
-	}
-	fmt.Printf("%s\n\n", resp.Choices[0].Message.Content)
-	bot.req.Messages = append(bot.req.Messages, resp.Choices[0].Message)
-	return resp.Choices[0].Message.Content, nil
+// Base implementation of HandleReply
+type BaseChatBot struct {
+	ReplyFunc func(string) (string, error)
+	InitFunc  func() error
 }
 
 // This function will be called (due to AddHandler above) every time a new
 // message is created on any channel that the authenticated bot has access to.
-func (bot *OpenAIChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCreate) {
+func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCreate) {
 
 	// Ignore all messages created by the bot itself
 	// This isn't required in this specific example but it's a good practice.
@@ -73,7 +40,7 @@ func (bot *OpenAIChatBot) HandleReply(s *discordgo.Session, m *discordgo.Message
 
 	content := removeMention(m.Content)
 
-	reply, err := bot.reply(content)
+	reply, err := bot.ReplyFunc(content)
 	if err != nil {
 		e := &openai.APIError{}
 		if errors.As(err, &e) {
@@ -81,7 +48,7 @@ func (bot *OpenAIChatBot) HandleReply(s *discordgo.Session, m *discordgo.Message
 			case 400:
 				if strings.Contains(e.Message, "Please reduce the length of the messages.") {
 					// Initialize the client and clear the message history
-					bot.Init()
+					bot.InitFunc()
 					s.ChannelMessageSend(m.ChannelID, "Cleared the message history as reached maximum token length. Please retry.")
 				}
 			case 401:

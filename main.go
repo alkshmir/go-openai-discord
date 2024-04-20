@@ -27,7 +27,6 @@ func main() {
 	if err != nil {
 		log.Fatal("Error creating chat bot: ", err)
 	}
-	log.Println(gpt)
 
 	botToken := os.Getenv("DISCORD_BOT_TOKEN")
 	if botToken == "" {
