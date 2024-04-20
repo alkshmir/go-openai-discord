@@ -9,15 +9,16 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-type chatBot struct {
+type OpenAIChatBot struct {
+	BaseChatBot
 	client openai.Client
 	req    openai.ChatCompletionRequest
 }
 
-func (bot *chatBot) Init() error {
+func (bot *OpenAIChatBot) Init() error {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		log.Fatal("OPENAI_API_KEY not found in .env file")
+		log.Fatal("OPENAI_API_KEY not found in .env file or environment variable")
 	}
 	bot.client = *openai.NewClient(apiKey)
 	bot.req = openai.ChatCompletionRequest{
@@ -29,13 +30,15 @@ func (bot *chatBot) Init() error {
 			},
 		},
 	}
+	bot.ReplyFunc = bot.Reply
+	bot.InitFunc = bot.Init
 	return nil
 }
 
-func (bot *chatBot) Reply(message string) (string, error) {
+func (bot *OpenAIChatBot) Reply(prompt string) (string, error) {
 	bot.req.Messages = append(bot.req.Messages, openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleUser,
-		Content: message,
+		Content: prompt,
 	})
 	resp, err := bot.client.CreateChatCompletion(context.Background(), bot.req)
 	if err != nil {
