@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -11,19 +10,13 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func NewChatBot() (IchatBot, error) {
-	cb := &OpenAIChatBot{}
-	cb.Init()
-	return cb, nil
-}
-
 func main() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
 
-	gpt, err := NewChatBot()
+	gpt, err := NewOpenAIChatBot()
 	if err != nil {
 		log.Fatal("Error creating chat bot: ", err)
 	}
@@ -35,8 +28,7 @@ func main() {
 	// Create a new Discord session using the provided bot token.
 	dg, err := discordgo.New("Bot " + botToken)
 	if err != nil {
-		fmt.Println("error creating Discord session,", err)
-		return
+		log.Fatal("error creating Discord session,", err)
 	}
 
 	// Register the messageCreate func as a callback for MessageCreate events.
@@ -47,13 +39,12 @@ func main() {
 	// Open a websocket connection to Discord and begin listening.
 	err = dg.Open()
 	if err != nil {
-		fmt.Println("error opening connection,", err)
-		return
+		log.Fatal("error opening connection,", err)
 	}
 	defer dg.Close()
 
 	// Wait here until CTRL-C or other term signal is received.
-	fmt.Println("Bot is now running.  Press CTRL-C to exit.")
+	log.Println("Bot is now running.  Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
