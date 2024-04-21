@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"regexp"
 	"strings"
@@ -17,10 +16,48 @@ type IchatBot interface {
 	HandleReply(s *discordgo.Session, m *discordgo.MessageCreate)
 }
 
+// contract for logging
+type Logger interface {
+	Println(v ...any)
+	Fatal(v ...any)
+}
+
+type DefaultLogger struct{}
+
+func (l *DefaultLogger) Println(v ...any) {
+	log.Println(v...)
+}
+
+func (l *DefaultLogger) Fatal(v ...any) {
+	log.Fatal(v...)
+}
+
+// Sender interface to sniff messages at testing
+type Sender interface {
+	ChannelSend(s *discordgo.Session, channelID string, content string) (*discordgo.Message, error)
+	ReplySend(s *discordgo.Session, channelID string, content string, reference *discordgo.MessageReference) (*discordgo.Message, error)
+}
+
+type DefaultSender struct {
+	logger Logger
+}
+
+func (ds *DefaultSender) ChannelSend(s *discordgo.Session, channelID string, content string) (*discordgo.Message, error) {
+	ds.logger.Println("Sending message:", content)
+	return s.ChannelMessageSend(channelID, content)
+}
+
+func (ds *DefaultSender) ReplySend(s *discordgo.Session, channelID string, content string, reference *discordgo.MessageReference) (*discordgo.Message, error) {
+	ds.logger.Println("Sending reply to:", content)
+	return s.ChannelMessageSendReply(channelID, content, reference)
+}
+
 // Base implementation of HandleReply
 type BaseChatBot struct {
 	ReplyFunc func(string) (string, error)
 	InitFunc  func() error
+	logger    Logger
+	sender    Sender
 }
 
 // This function will be called (due to AddHandler above) every time a new
@@ -34,14 +71,18 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 	}
 
 	if !isTalkingToBot(s, m) {
-		fmt.Println("Ignoring message")
+		// ignoring message
 		return
 	}
 
 	content := removeMention(m.Content)
 
+	if bot.ReplyFunc == nil {
+		panic("ReplyFunc is not initialized. To generate a reply, specify ReplyFunc and InitFunc in Init().")
+	}
 	reply, err := bot.ReplyFunc(content)
 	if err != nil {
+		// opnai API error handling
 		e := &openai.APIError{}
 		if errors.As(err, &e) {
 			switch e.HTTPStatusCode {
@@ -49,44 +90,41 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 				if strings.Contains(e.Message, "Please reduce the length of the messages.") {
 					// Initialize the client and clear the message history
 					bot.InitFunc()
-					s.ChannelMessageSend(m.ChannelID, "Cleared the message history as reached maximum token length. Please retry.")
+					bot.sender.ChannelSend(s, m.ChannelID, "Cleared the message history as reached maximum token length. Please retry.")
 				}
 			case 401:
 				// invalid auth or key (do not retry)
-				log.Fatal("Invalid auth or key")
+				bot.logger.Fatal("Invalid auth or key")
 			case 429:
 				// rate limiting or engine overload (wait and retry)
-				log.Println(err)
-				s.ChannelMessageSend(m.ChannelID, e.Message)
+				bot.logger.Println(err)
+				bot.sender.ChannelSend(s, m.ChannelID, e.Message)
 			case 500:
 				// openai server error (retry)
-				log.Println(err)
-				s.ChannelMessageSend(m.ChannelID, e.Message)
+				bot.logger.Println(err)
+				bot.sender.ChannelSend(s, m.ChannelID, e.Message)
 			default:
 				// unhandled
-				log.Fatal(err)
+				bot.sender.ChannelSend(s, m.ChannelID, e.Message)
+				bot.logger.Fatal(err)
 			}
 		}
+		// TODO: add discord API error handling
+	} else {
+		bot.sender.ChannelSend(s, m.ChannelID, reply)
 	}
-	s.ChannelMessageSend(m.ChannelID, reply)
 }
 
 func isTalkingToBot(s *discordgo.Session, m *discordgo.MessageCreate) bool {
 	// Check if the message includes a mention to the bot
+	// Note that when the message is a reply, m.Mentions contains the user of the reference message.
 	for _, mention := range m.Mentions {
 		if mention.ID == s.State.User.ID {
 			return true
 		}
 	}
 
-	// Check if the message is a reply to a bot
-	if m.Message.Reference() != nil {
-		referenceMessage, _ := s.ChannelMessage(m.Message.ChannelID, m.Message.Reference().MessageID)
-		if referenceMessage.Author.ID == s.State.User.ID {
-			return true
-		}
-	}
-
+	// Check if this is a DM channel
 	if channel, _ := s.Channel(m.ChannelID); channel.Type == discordgo.ChannelTypeDM {
 		return true
 	}
