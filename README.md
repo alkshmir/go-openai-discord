@@ -12,14 +12,3 @@ Try your bot:
 ```
 go run main.go
 ```
-
-### Docker
-Build a container:
-```
-docker build -t openai-discord .
-```
-
-Run the container:
-```
-docker run --env-file .env openai-discord
-```
