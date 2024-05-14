@@ -46,7 +46,7 @@ func (bot *OpenAIChatBot) Init() error {
 	}
 	bot.client = *openai.NewClient(apiKey)
 	bot.req = openai.ChatCompletionRequest{
-		Model: openai.GPT4Turbo,
+		Model: openai.GPT4o,
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
