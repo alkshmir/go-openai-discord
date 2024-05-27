@@ -80,6 +80,7 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 	if bot.ReplyFunc == nil {
 		panic("ReplyFunc is not initialized. To generate a reply, specify ReplyFunc and InitFunc in Init().")
 	}
+
 	reply, err := bot.ReplyFunc(content)
 	if err != nil {
 		// opnai API error handling
@@ -111,8 +112,13 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 		}
 		// TODO: add discord API error handling
 	} else {
-		bot.sender.ChannelSend(s, m.ChannelID, reply)
+		// split the content so it's less than 2000 characters
+		replies := splitMessage(reply, 2000)
+		for _, r := range replies {
+			bot.sender.ChannelSend(s, m.ChannelID, r)
+		}
 	}
+
 }
 
 func isTalkingToBot(s *discordgo.Session, m *discordgo.MessageCreate) bool {

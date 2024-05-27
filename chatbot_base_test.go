@@ -208,7 +208,7 @@ func TestHandleReply(t *testing.T) {
 					//MessageReference: nil,
 				},
 			},
-			"Test reply",
+			"Test reply\n",
 		},
 	}
 	chatbot := BaseChatBot{}
@@ -223,7 +223,7 @@ func TestHandleReply(t *testing.T) {
 			t.Log(mockSender.Messages)
 			got := mockSender.Messages[mockconstants.TestChannel][len(mockSender.Messages)-1]
 			if got != test.expectedMsg {
-				t.Errorf("expected reply %v, got %v", test.expectedMsg, got)
+				t.Errorf("expected reply %#v, got %#v", test.expectedMsg, got)
 			}
 		})
 	}

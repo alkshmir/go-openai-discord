@@ -74,3 +74,10 @@ func (bot *OpenAIChatBot) Reply(prompt string) (string, error) {
 	bot.req.Messages = append(bot.req.Messages, resp.Choices[0].Message)
 	return resp.Choices[0].Message.Content, nil
 }
+
+func (bot *OpenAIChatBot) FakeReply(prompt string) (string, error) {
+	f, _ := os.Open("fake.txt")
+	data := make([]byte, 4096)
+	count, _ := f.Read(data)
+	return string(data[:count]), nil
+}
