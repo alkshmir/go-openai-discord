@@ -10,6 +10,17 @@ import (
 	"github.com/joho/godotenv"
 )
 
+var commands = []*discordgo.ApplicationCommand{
+	{
+		Name:        "basic-command",
+		Description: "Basic command",
+	},
+	{
+		Name:        "forget",
+		Description: "forget chat context of this channel",
+	},
+}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -43,10 +54,40 @@ func main() {
 	}
 	defer dg.Close()
 
+	// Register commands
+	commandHandlers := map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
+		"forget": gpt.RemoveContext,
+	}
+
+	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if h, ok := commandHandlers[i.ApplicationCommandData().Name]; ok {
+			h(s, i)
+		}
+	})
+	registeredCommands := make([]*discordgo.ApplicationCommand, len(commands))
+	for i, v := range commands {
+		cmd, err := dg.ApplicationCommandCreate(dg.State.User.ID, "", v)
+		log.Printf("%#v", cmd)
+		if err != nil {
+			log.Panicf("Cannot create '%v' command: %v", v.Name, err)
+		}
+		log.Printf("Command '%v' created successfully", v.Name)
+		registeredCommands[i] = cmd
+	}
+
 	// Wait here until CTRL-C or other term signal is received.
 	log.Println("Bot is now running.  Press CTRL-C to exit.")
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-sc
 
+	log.Println("Removing commands...")
+
+	for _, v := range registeredCommands {
+		err := dg.ApplicationCommandDelete(dg.State.User.ID, "", v.ID)
+		if err != nil {
+			log.Panicf("Cannot delete '%v' command: %v", v.Name, err)
+		}
+		log.Printf("Command '%v' deleted", v.Name)
+	}
 }

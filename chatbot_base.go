@@ -14,6 +14,7 @@ type IchatBot interface {
 	Init() error
 	Reply(prompt string) (string, error)
 	HandleReply(s *discordgo.Session, m *discordgo.MessageCreate)
+	RemoveContext(s *discordgo.Session, i *discordgo.InteractionCreate)
 }
 
 // contract for logging

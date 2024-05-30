@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/bwmarrin/discordgo"
 	openai "github.com/sashabaranov/go-openai"
 )
 
@@ -80,4 +81,28 @@ func (bot *OpenAIChatBot) FakeReply(prompt string) (string, error) {
 	data := make([]byte, 4096)
 	count, _ := f.Read(data)
 	return string(data[:count]), nil
+}
+
+func (bot *OpenAIChatBot) newContext() openai.ChatCompletionRequest {
+	return openai.ChatCompletionRequest{
+		Model: openai.GPT4o,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: "you are a helpful chatbot",
+			},
+		},
+	}
+}
+
+func (bot *OpenAIChatBot) RemoveContext(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if _, exists := bot.chatContext[i.ChannelID]; exists {
+		delete(bot.chatContext, i.ChannelID)
+	}
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Deleted chat context of this channel.",
+		},
+	})
 }
