@@ -100,3 +100,15 @@ func (bot *OpenAIChatBot) newContext() openai.ChatCompletionRequest {
 		},
 	}
 }
+
+func (bot *OpenAIChatBot) RemoveContext(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if _, exists := bot.chatContext[i.ChannelID]; exists {
+		delete(bot.chatContext, i.ChannelID)
+	}
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Deleted chat context of this channel.",
+		},
+	})
+}
