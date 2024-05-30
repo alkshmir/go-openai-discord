@@ -216,7 +216,9 @@ func TestHandleReply(t *testing.T) {
 	mockSender := MockSender{}
 	chatbot.logger = &mockLogger
 	chatbot.sender = &mockSender
-	chatbot.ReplyFunc = func(m string) (string, error) { return "Test reply", nil }
+	chatbot.ReplyFunc = func(m string, s *discordgo.Session, mc *discordgo.MessageCreate) (string, error) {
+		return "Test reply", nil
+	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			chatbot.HandleReply(test.session, test.message)

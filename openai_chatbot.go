@@ -10,8 +10,8 @@ import (
 
 type OpenAIChatBot struct {
 	BaseChatBot
-	client openai.Client
-	req    openai.ChatCompletionRequest
+	client      openai.Client
+	chatContext map[string]openai.ChatCompletionRequest
 }
 
 // the functional options for OpenAIChatBot
@@ -46,33 +46,39 @@ func (bot *OpenAIChatBot) Init() error {
 		bot.logger.Fatal("OPENAI_API_KEY not found in .env file or environment variable")
 	}
 	bot.client = *openai.NewClient(apiKey)
-	bot.req = openai.ChatCompletionRequest{
-		Model: openai.GPT4o,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: "you are a helpful chatbot",
-			},
-		},
-	}
+	bot.chatContext = make(map[string]openai.ChatCompletionRequest)
+
 	bot.ReplyFunc = bot.Reply
 	bot.InitFunc = bot.Init
 	bot.logger.Println("Initialized OpenAI chatbot")
 	return nil
 }
 
-func (bot *OpenAIChatBot) Reply(prompt string) (string, error) {
-	bot.req.Messages = append(bot.req.Messages, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: prompt,
-	})
-	resp, err := bot.client.CreateChatCompletion(context.Background(), bot.req)
+func (bot *OpenAIChatBot) Reply(prompt string, s *discordgo.Session, m *discordgo.MessageCreate) (string, error) {
+	if c, exists := bot.chatContext[m.ChannelID]; exists {
+		c.Messages = append(c.Messages, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: prompt,
+		})
+		bot.chatContext[m.ChannelID] = c
+	} else {
+		c = bot.newContext()
+		c.Messages = append(c.Messages, openai.ChatCompletionMessage{
+			Role:    openai.ChatMessageRoleUser,
+			Content: prompt,
+		})
+		bot.chatContext[m.ChannelID] = c
+	}
+
+	resp, err := bot.client.CreateChatCompletion(context.Background(), bot.chatContext[m.ChannelID])
 	if err != nil {
 		bot.logger.Println("ChatCompletion error: %v\n", err)
 		return "", err
 	}
 	//fmt.Printf("%s\n\n", resp.Choices[0].Message.Content)
-	bot.req.Messages = append(bot.req.Messages, resp.Choices[0].Message)
+	c := bot.chatContext[m.ChannelID]
+	c.Messages = append(c.Messages, resp.Choices[0].Message)
+	bot.chatContext[m.ChannelID] = c
 	return resp.Choices[0].Message.Content, nil
 }
 

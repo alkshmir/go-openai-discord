@@ -12,7 +12,7 @@ import (
 
 type IchatBot interface {
 	Init() error
-	Reply(prompt string) (string, error)
+	Reply(prompt string, s *discordgo.Session, m *discordgo.MessageCreate) (string, error)
 	HandleReply(s *discordgo.Session, m *discordgo.MessageCreate)
 	RemoveContext(s *discordgo.Session, i *discordgo.InteractionCreate)
 }
@@ -55,7 +55,7 @@ func (ds *DefaultSender) ReplySend(s *discordgo.Session, channelID string, conte
 
 // Base implementation of HandleReply
 type BaseChatBot struct {
-	ReplyFunc func(string) (string, error)
+	ReplyFunc func(string, *discordgo.Session, *discordgo.MessageCreate) (string, error)
 	InitFunc  func() error
 	logger    Logger
 	sender    Sender
@@ -82,7 +82,7 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 		panic("ReplyFunc is not initialized. To generate a reply, specify ReplyFunc and InitFunc in Init().")
 	}
 
-	reply, err := bot.ReplyFunc(content)
+	reply, err := bot.ReplyFunc(content, s, m)
 	if err != nil {
 		// opnai API error handling
 		e := &openai.APIError{}
