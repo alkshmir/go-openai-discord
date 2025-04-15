@@ -1,7 +1,6 @@
 module github.com/alkshmir/go-openai-discord
 
-go 1.22
-toolchain go1.24.1
+go 1.24.1
 
 require (
 	github.com/bwmarrin/discordgo v0.28.1
