@@ -1,5 +1,5 @@
-github.com/bwmarrin/discordgo v0.28.1 h1:gXsuo2GBO7NbR6uqmrrBDplPUx2T3nzu775q/Rd1aG4=
-github.com/bwmarrin/discordgo v0.28.1/go.mod h1:NJZpH+1AfhIcyQsPeuBKsUtYrRnjkyu0kIVMCHkZtRY=
+github.com/bwmarrin/discordgo v0.29.0 h1:FmWeXFaKUwrcL3Cx65c20bTRW+vOb6k8AnaP+EgjDno=
+github.com/bwmarrin/discordgo v0.29.0/go.mod h1:NJZpH+1AfhIcyQsPeuBKsUtYrRnjkyu0kIVMCHkZtRY=
 github.com/ewohltman/discordgo-mock v0.0.11 h1:aRbgVXLFeoSLMCJjO7GyDkXHdMKZh6mVSEKxv73gDyY=
 github.com/ewohltman/discordgo-mock v0.0.11/go.mod h1:tu+6ymSz5JKvySUmv7/Q2Oh+aXgxGPir7ZfOz9gfadM=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
