@@ -83,10 +83,11 @@ func TestRemoveMention(t *testing.T) {
 func TestIsTalkingToBot(t *testing.T) {
 
 	tests := []struct {
-		name     string
-		session  *discordgo.Session
-		message  *discordgo.MessageCreate
-		expected bool
+		name          string
+		session       *discordgo.Session
+		message       *discordgo.MessageCreate
+		expected      bool
+		expectedError error
 	}{
 		{
 			"IncludesMention",
@@ -111,6 +112,7 @@ func TestIsTalkingToBot(t *testing.T) {
 				},
 			},
 			true,
+			nil,
 		},
 		{
 			"DMchannel",
@@ -128,6 +130,7 @@ func TestIsTalkingToBot(t *testing.T) {
 				},
 			},
 			true,
+			nil,
 		},
 		{
 			"DMchannelWithMention",
@@ -151,6 +154,7 @@ func TestIsTalkingToBot(t *testing.T) {
 				},
 			},
 			true,
+			nil,
 		},
 		{
 			"NotTalking",
@@ -167,13 +171,23 @@ func TestIsTalkingToBot(t *testing.T) {
 				},
 			},
 			false,
+			nil,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := isTalkingToBot(test.session, test.message)
+			result, err := isTalkingToBot(test.session, test.message)
 			if result != test.expected {
 				t.Errorf("isTalkingToBot(%v, %v) = %v, want %v", test.session, test.message, result, test.expected)
+			}
+			if err != nil && test.expectedError == nil {
+				t.Errorf("isTalkingToBot(%v, %v) returned unexpected error: %v", test.session, test.message, err)
+			}
+			if err == nil && test.expectedError != nil {
+				t.Errorf("isTalkingToBot(%v, %v) expected error: %v, got nil", test.session, test.message, test.expectedError)
+			}
+			if err != nil && test.expectedError != nil && err.Error() != test.expectedError.Error() {
+				t.Errorf("isTalkingToBot(%v, %v) expected error: %v, got: %v", test.session, test.message, test.expectedError, err)
 			}
 		})
 	}
