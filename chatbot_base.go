@@ -71,7 +71,12 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 		return
 	}
 
-	if !isTalkingToBot(s, m) {
+	t, err := isTalkingToBot(s, m)
+	if err != nil {
+		bot.logger.Println("Error checking if talking to bot:", err)
+		return
+	}
+	if !t {
 		// ignoring message
 		return
 	}
@@ -122,21 +127,25 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 
 }
 
-func isTalkingToBot(s *discordgo.Session, m *discordgo.MessageCreate) bool {
+func isTalkingToBot(s *discordgo.Session, m *discordgo.MessageCreate) (bool, error) {
 	// Check if the message includes a mention to the bot
 	// Note that when the message is a reply, m.Mentions contains the user of the reference message.
 	for _, mention := range m.Mentions {
 		if mention.ID == s.State.User.ID {
-			return true
+			return true, nil
 		}
 	}
 
 	// Check if this is a DM channel
-	if channel, _ := s.Channel(m.ChannelID); channel.Type == discordgo.ChannelTypeDM {
-		return true
+	channel, err := s.Channel(m.ChannelID)
+	if err != nil {
+		return false, err
+	}
+	if channel.Type == discordgo.ChannelTypeDM {
+		return true, nil
 	}
 
-	return false
+	return false, nil
 }
 
 func removeMention(m string) string {
