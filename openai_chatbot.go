@@ -91,7 +91,7 @@ func (bot *OpenAIChatBot) FakeReply(prompt string) (string, error) {
 
 func (bot *OpenAIChatBot) newContext() openai.ChatCompletionRequest {
 	return openai.ChatCompletionRequest{
-		Model: "gpt-4.1",
+		Model: "gpt-5",
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
