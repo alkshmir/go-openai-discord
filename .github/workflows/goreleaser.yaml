@@ -6,14 +6,11 @@ on:
     tags:
       - "*"
 
-permissions:
-  contents: write
-  # packages: write
-  # issues: write
-  # id-token: write
-
 jobs:
   goreleaser:
+    permissions:
+      contents: write
+      packages: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
