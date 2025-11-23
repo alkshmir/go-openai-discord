@@ -1,21 +1,9 @@
-# Build stage
-FROM golang:1.22 as builder
-
-WORKDIR /build
-
-COPY go.mod ./
-COPY go.sum ./
-RUN go mod download
-
-COPY . .
-
-RUN go build -o main .
-
-# Deploy container
+# This dockerfile is optimized for goreleaser and
+# you cannot build by bare docker build command.
+# Run `go tool goreleaser release --snapshot --clean` to build this image.
 FROM gcr.io/distroless/base-debian12:latest
+ARG TARGETPLATFORM
 
-WORKDIR /
-
-COPY --from=builder /build/main /main
 USER nonroot
-CMD [ "/main" ]
+COPY $TARGETPLATFORM/go-openai-discord /usr/bin/go-openai-discord
+ENTRYPOINT ["/usr/bin/go-openai-discord"]

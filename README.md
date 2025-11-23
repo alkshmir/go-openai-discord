@@ -14,12 +14,17 @@ go run main.go
 ```
 
 ### Docker
-Build a container:
+
+This prject uses `goreleaser` for binary and docker image distribution.
+
+To build the image and binary locally, run the following command:
+
 ```
-docker build -t openai-discord .
+go tool goreleaser release --snapshot --clean
 ```
 
-Run the container:
-```
-docker run --env-file .env openai-discord
-```
+Note that this will produce `latest-<architecture>` tags instead of `latest` due to current limtations of goreleaser.
+This behavior may change in the future.
+See [discussions](https://github.com/orgs/goreleaser/discussions/6005#discussioncomment-14540712) for more details.
+
+Set [environment variable](#deploy) to run the built container.

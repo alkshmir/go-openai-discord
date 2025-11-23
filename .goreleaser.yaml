@@ -1,0 +1,21 @@
+version: 2
+project_name: go-openai-discord
+builds:
+  - env: [CGO_ENABLED=0]
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+dockers_v2:
+  - dockerfile: Dockerfile
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    tags:
+      - "v{{ .Version }}"
+      - "{{ if not .IsNightly }}latest{{ end }}"
+    images:
+      - "ghcr.io/alkshmir/go-openai-discord"
