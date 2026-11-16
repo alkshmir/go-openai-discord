@@ -72,7 +72,7 @@ func (bot *OpenAIChatBot) Reply(prompt string, s *discordgo.Session, m *discordg
 
 	resp, err := bot.client.CreateChatCompletion(context.Background(), bot.chatContext[m.ChannelID])
 	if err != nil {
-		bot.logger.Println("ChatCompletion error: %v\n", err)
+		bot.logger.Printf("ChatCompletion error: %v\n", err)
 		return "", err
 	}
 	//fmt.Printf("%s\n\n", resp.Choices[0].Message.Content)

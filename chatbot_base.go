@@ -20,6 +20,7 @@ type IchatBot interface {
 // contract for logging
 type Logger interface {
 	Println(v ...any)
+	Printf(s string, v ...any)
 	Fatal(v ...any)
 }
 
@@ -27,6 +28,10 @@ type DefaultLogger struct{}
 
 func (l *DefaultLogger) Println(v ...any) {
 	log.Println(v...)
+}
+
+func (l *DefaultLogger) Printf(s string, v ...any) {
+	log.Printf(s, v...)
 }
 
 func (l *DefaultLogger) Fatal(v ...any) {

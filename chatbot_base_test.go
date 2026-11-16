@@ -29,6 +29,10 @@ func (m *MockLogger) Println(v ...any) {
 	m.printLogs = append(m.printLogs, msg)
 }
 
+func (m *MockLogger) Printf(s string, v ...any) {
+	fmt.Printf(s, v...)
+}
+
 func (m *MockLogger) Fatal(v ...any) {
 	msg := fmt.Sprint(v...)
 	m.fatalLogs = append(m.fatalLogs, msg)
