@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"log"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -17,27 +17,6 @@ type IchatBot interface {
 	RemoveContext(s *discordgo.Session, i *discordgo.InteractionCreate)
 }
 
-// contract for logging
-type Logger interface {
-	Println(v ...any)
-	Printf(s string, v ...any)
-	Fatal(v ...any)
-}
-
-type DefaultLogger struct{}
-
-func (l *DefaultLogger) Println(v ...any) {
-	log.Println(v...)
-}
-
-func (l *DefaultLogger) Printf(s string, v ...any) {
-	log.Printf(s, v...)
-}
-
-func (l *DefaultLogger) Fatal(v ...any) {
-	log.Fatal(v...)
-}
-
 // Sender interface to sniff messages at testing
 type Sender interface {
 	ChannelSend(s *discordgo.Session, channelID string, content string) (*discordgo.Message, error)
@@ -45,16 +24,16 @@ type Sender interface {
 }
 
 type DefaultSender struct {
-	logger Logger
+	logger *slog.Logger
 }
 
 func (ds *DefaultSender) ChannelSend(s *discordgo.Session, channelID string, content string) (*discordgo.Message, error) {
-	ds.logger.Println("Sending message:", content)
+	ds.logger.Info("sending message", "channel_id", channelID, "content", content)
 	return s.ChannelMessageSend(channelID, content)
 }
 
 func (ds *DefaultSender) ReplySend(s *discordgo.Session, channelID string, content string, reference *discordgo.MessageReference) (*discordgo.Message, error) {
-	ds.logger.Println("Sending reply to:", content)
+	ds.logger.Info("sending reply", "channel_id", channelID, "content", content)
 	return s.ChannelMessageSendReply(channelID, content, reference)
 }
 
@@ -62,7 +41,7 @@ func (ds *DefaultSender) ReplySend(s *discordgo.Session, channelID string, conte
 type BaseChatBot struct {
 	ReplyFunc func(string, *discordgo.Session, *discordgo.MessageCreate) (string, error)
 	InitFunc  func() error
-	logger    Logger
+	logger    *slog.Logger
 	sender    Sender
 }
 
@@ -78,7 +57,7 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 
 	t, err := isTalkingToBot(s, m)
 	if err != nil {
-		bot.logger.Println("Error checking if talking to bot:", err)
+		bot.logger.Error("failed to check if talking to bot", "channel_id", m.ChannelID, "error", err)
 		return
 	}
 	if !t {
@@ -101,25 +80,30 @@ func (bot *BaseChatBot) HandleReply(s *discordgo.Session, m *discordgo.MessageCr
 			case 400:
 				if strings.Contains(e.Message, "Please reduce the length of the messages.") {
 					// Initialize the client and clear the message history
+					bot.logger.Warn("cleared message history due to max token length", "channel_id", m.ChannelID, "error", err)
 					bot.InitFunc()
 					bot.sender.ChannelSend(s, m.ChannelID, "Cleared the message history as reached maximum token length. Please retry.")
+				} else {
+					bot.logger.Error("OpenAI bad request", "channel_id", m.ChannelID, "error", err)
 				}
 			case 401:
 				// invalid auth or key (do not retry)
-				bot.logger.Fatal("Invalid auth or key")
+				bot.logger.Error("invalid OpenAI auth or API key", "error", err)
 			case 429:
 				// rate limiting or engine overload (wait and retry)
-				bot.logger.Println(err)
+				bot.logger.Warn("OpenAI rate limited or overloaded", "channel_id", m.ChannelID, "error", err)
 				bot.sender.ChannelSend(s, m.ChannelID, e.Message)
 			case 500:
 				// openai server error (retry)
-				bot.logger.Println(err)
+				bot.logger.Error("OpenAI server error", "channel_id", m.ChannelID, "error", err)
 				bot.sender.ChannelSend(s, m.ChannelID, e.Message)
 			default:
 				// unhandled
+				bot.logger.Error("unhandled OpenAI API error", "status_code", e.HTTPStatusCode, "channel_id", m.ChannelID, "error", err)
 				bot.sender.ChannelSend(s, m.ChannelID, e.Message)
-				bot.logger.Fatal(err)
 			}
+		} else {
+			bot.logger.Error("failed to generate reply", "channel_id", m.ChannelID, "error", err)
 		}
 		// TODO: add discord API error handling
 	} else {

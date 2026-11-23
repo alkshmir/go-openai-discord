@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"os"
 
 	"github.com/bwmarrin/discordgo"
@@ -18,7 +20,7 @@ type OpenAIChatBot struct {
 type ChatBotOption func(*OpenAIChatBot)
 
 // functional option to set the logger for OpenAIChatBot
-func WithLogger(l Logger) ChatBotOption {
+func WithLogger(l *slog.Logger) ChatBotOption {
 	return func(s *OpenAIChatBot) {
 		s.logger = l
 	}
@@ -31,26 +33,28 @@ func NewOpenAIChatBot(opts ...ChatBotOption) (IchatBot, error) {
 	}
 	// Default logger configuration
 	if cb.logger == nil {
-		cb.logger = &DefaultLogger{}
+		cb.logger = slog.Default()
 	}
 	cb.sender = &DefaultSender{
 		logger: cb.logger,
 	}
-	cb.Init()
+	if err := cb.Init(); err != nil {
+		return nil, err
+	}
 	return cb, nil
 }
 
 func (bot *OpenAIChatBot) Init() error {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		bot.logger.Fatal("OPENAI_API_KEY not found in .env file or environment variable")
+		return errors.New("OPENAI_API_KEY not found in .env file or environment variable")
 	}
 	bot.client = *openai.NewClient(apiKey)
 	bot.chatContext = make(map[string]openai.ChatCompletionRequest)
 
 	bot.ReplyFunc = bot.Reply
 	bot.InitFunc = bot.Init
-	bot.logger.Println("Initialized OpenAI chatbot")
+	bot.logger.Info("initialized OpenAI chatbot")
 	return nil
 }
 
@@ -72,7 +76,7 @@ func (bot *OpenAIChatBot) Reply(prompt string, s *discordgo.Session, m *discordg
 
 	resp, err := bot.client.CreateChatCompletion(context.Background(), bot.chatContext[m.ChannelID])
 	if err != nil {
-		bot.logger.Printf("ChatCompletion error: %v\n", err)
+		bot.logger.Error("chat completion failed", "channel_id", m.ChannelID, "error", err)
 		return "", err
 	}
 	//fmt.Printf("%s\n\n", resp.Choices[0].Message.Content)
