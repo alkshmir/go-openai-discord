@@ -5,7 +5,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/ewohltman/discordgo-mock/mockchannel"
@@ -39,10 +41,15 @@ func (m *mockResponder) Reset(ctx context.Context, channelID string) error {
 
 // MockSender is a mock implementation of Sender for testing.
 type MockSender struct {
-	Messages map[string][]string
+	mu          sync.Mutex
+	Messages    map[string][]string
+	TypingCount map[string]int
+	typingFunc  func(ctx context.Context, channelID string) error
 }
 
 func (ms *MockSender) ChannelSend(s *discordgo.Session, channelID string, content string) (*discordgo.Message, error) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
 	if ms.Messages == nil {
 		ms.Messages = make(map[string][]string)
 	}
@@ -52,6 +59,26 @@ func (ms *MockSender) ChannelSend(s *discordgo.Session, channelID string, conten
 
 func (ms *MockSender) ReplySend(s *discordgo.Session, channelID string, content string, reference *discordgo.MessageReference) (*discordgo.Message, error) {
 	return ms.ChannelSend(s, channelID, content)
+}
+
+func (ms *MockSender) Typing(ctx context.Context, s *discordgo.Session, channelID string) error {
+	ms.mu.Lock()
+	if ms.TypingCount == nil {
+		ms.TypingCount = make(map[string]int)
+	}
+	ms.TypingCount[channelID]++
+	fn := ms.typingFunc
+	ms.mu.Unlock()
+	if fn != nil {
+		return fn(ctx, channelID)
+	}
+	return nil
+}
+
+func (ms *MockSender) typingCalls(channelID string) int {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	return ms.TypingCount[channelID]
 }
 
 func TestRemoveMention(t *testing.T) {
@@ -275,6 +302,46 @@ func TestHandleMessage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHandleMessage_TypingIndicator(t *testing.T) {
+	mockSender := &MockSender{}
+	bot := NewBot(
+		&mockResponder{
+			replyFunc: func(ctx context.Context, channelID, prompt string) (string, error) {
+				time.Sleep(55 * time.Millisecond)
+				return "done", nil
+			},
+		},
+		WithLogger(slog.New(slog.DiscardHandler)),
+		WithSender(mockSender),
+	)
+	bot.typingInterval = 15 * time.Millisecond
+
+	msg := &discordgo.MessageCreate{
+		Message: &discordgo.Message{
+			ID:        "dummy_message_id",
+			Content:   "Hello <@123>",
+			ChannelID: mockconstants.TestChannel,
+			Author:    &discordgo.User{ID: "dummy", Username: "Test user"},
+			Mentions: []*discordgo.User{
+				mockuser.New(mockuser.WithID("123"), mockuser.WithBotFlag(true)),
+			},
+		},
+	}
+
+	bot.HandleMessage(newSession(), msg)
+
+	countAfterReturn := mockSender.typingCalls(mockconstants.TestChannel)
+	if countAfterReturn < 2 {
+		t.Errorf("expected typing to be refreshed at least twice during reply, got %d", countAfterReturn)
+	}
+
+	// Ensure no further typing calls happen after HandleMessage returns.
+	time.Sleep(40 * time.Millisecond)
+	if got := mockSender.typingCalls(mockconstants.TestChannel); got != countAfterReturn {
+		t.Errorf("typing continued after HandleMessage returned: before=%d, after=%d", countAfterReturn, got)
 	}
 }
 
