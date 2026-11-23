@@ -38,10 +38,13 @@ func run(logger *slog.Logger) error {
 		logger.Warn("failed to load .env file, using environment variables", "error", err)
 	}
 
-	gpt, err := NewOpenAIChatBot(WithLogger(logger))
+	aiClient, err := NewOpenAIClient(os.Getenv("OPENAI_API_KEY"))
 	if err != nil {
-		return fmt.Errorf("creating chat bot: %w", err)
+		return fmt.Errorf("creating OpenAI client: %w", err)
 	}
+	logger.Info("initialized OpenAI client")
+
+	bot := NewBot(aiClient, WithLogger(logger))
 
 	botToken := os.Getenv("DISCORD_BOT_TOKEN")
 	if botToken == "" {
@@ -54,7 +57,7 @@ func run(logger *slog.Logger) error {
 	}
 
 	// Register the messageCreate func as a callback for MessageCreate events.
-	dg.AddHandler(gpt.HandleReply)
+	dg.AddHandler(bot.HandleMessage)
 	// In this example, we only care about receiving message events.
 	dg.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsDirectMessages
 
@@ -66,7 +69,7 @@ func run(logger *slog.Logger) error {
 
 	// Register commands
 	commandHandlers := map[string]func(s *discordgo.Session, i *discordgo.InteractionCreate){
-		"forget": gpt.RemoveContext,
+		"forget": bot.HandleForget,
 	}
 
 	dg.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {

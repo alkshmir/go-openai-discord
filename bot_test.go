@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"testing"
@@ -17,7 +19,25 @@ import (
 	"github.com/ewohltman/discordgo-mock/mockuser"
 )
 
-// mock implementation of sender interface
+type mockResponder struct {
+	replyFunc     func(ctx context.Context, channelID, prompt string) (string, error)
+	resetFunc     func(ctx context.Context, channelID string) error
+	resetChannels []string
+}
+
+func (m *mockResponder) Reply(ctx context.Context, channelID, prompt string) (string, error) {
+	return m.replyFunc(ctx, channelID, prompt)
+}
+
+func (m *mockResponder) Reset(ctx context.Context, channelID string) error {
+	m.resetChannels = append(m.resetChannels, channelID)
+	if m.resetFunc != nil {
+		return m.resetFunc(ctx, channelID)
+	}
+	return nil
+}
+
+// MockSender is a mock implementation of Sender for testing.
 type MockSender struct {
 	Messages map[string][]string
 }
@@ -56,7 +76,6 @@ func TestRemoveMention(t *testing.T) {
 }
 
 func TestIsTalkingToBot(t *testing.T) {
-
 	tests := []struct {
 		name          string
 		session       *discordgo.Session
@@ -83,7 +102,6 @@ func TestIsTalkingToBot(t *testing.T) {
 							mockuser.WithBotFlag(true),
 						),
 					},
-					//MessageReference: nil,
 				},
 			},
 			true,
@@ -101,7 +119,7 @@ func TestIsTalkingToBot(t *testing.T) {
 						ID:       "dummy",
 						Username: "Test user",
 					},
-					Mentions: []*discordgo.User{}, // no mention
+					Mentions: []*discordgo.User{},
 				},
 			},
 			true,
@@ -168,52 +186,93 @@ func TestIsTalkingToBot(t *testing.T) {
 	}
 }
 
-func TestHandleReply(t *testing.T) {
-	tests := []struct {
-		name        string
-		session     *discordgo.Session
-		message     *discordgo.MessageCreate
-		expectedMsg string
-	}{
-		{
-			"Mentioned",
-			newSession(),
-			&discordgo.MessageCreate{
-				Message: &discordgo.Message{
-					ID:        "dummy_message_id",
-					Content:   "Hello <@123>, how are you?",
-					ChannelID: mockconstants.TestChannel,
-					Author: &discordgo.User{
-						ID:       "dummy",
-						Username: "Test user",
-					},
-					Mentions: []*discordgo.User{
-						mockuser.New(
-							mockuser.WithID("123"),
-							mockuser.WithUsername(mockconstants.TestUser+"Bot"),
-							mockuser.WithBotFlag(true),
-						),
-					},
-					//MessageReference: nil,
+func TestHandleMessage(t *testing.T) {
+	mentionedMsg := func() *discordgo.MessageCreate {
+		return &discordgo.MessageCreate{
+			Message: &discordgo.Message{
+				ID:        "dummy_message_id",
+				Content:   "Hello <@123>, how are you?",
+				ChannelID: mockconstants.TestChannel,
+				Author: &discordgo.User{
+					ID:       "dummy",
+					Username: "Test user",
+				},
+				Mentions: []*discordgo.User{
+					mockuser.New(
+						mockuser.WithID("123"),
+						mockuser.WithUsername(mockconstants.TestUser+"Bot"),
+						mockuser.WithBotFlag(true),
+					),
 				},
 			},
-			"Test reply\n",
+		}
+	}
+
+	tests := []struct {
+		name        string
+		replyFunc   func(ctx context.Context, channelID, prompt string) (string, error)
+		expectedMsg []string
+	}{
+		{
+			name: "Mentioned",
+			replyFunc: func(ctx context.Context, channelID, prompt string) (string, error) {
+				return "Test reply", nil
+			},
+			expectedMsg: []string{"Test reply\n"},
+		},
+		{
+			name: "ContextTooLong",
+			replyFunc: func(ctx context.Context, channelID, prompt string) (string, error) {
+				return "", &ChatError{
+					Kind:        ErrContextTooLong,
+					UserMessage: "Cleared the message history as reached maximum token length. Please retry.",
+					Err:         errors.New("token limit exceeded"),
+				}
+			},
+			expectedMsg: []string{"Cleared the message history as reached maximum token length. Please retry."},
+		},
+		{
+			name: "UnauthorizedDoesNotSendUserMessage",
+			replyFunc: func(ctx context.Context, channelID, prompt string) (string, error) {
+				return "", &ChatError{
+					Kind: ErrUnauthorized,
+					Err:  errors.New("invalid api key"),
+				}
+			},
+			expectedMsg: nil,
+		},
+		{
+			name: "RateLimited",
+			replyFunc: func(ctx context.Context, channelID, prompt string) (string, error) {
+				return "", &ChatError{
+					Kind:        ErrRateLimited,
+					UserMessage: "rate limit reached",
+					Err:         errors.New("429"),
+				}
+			},
+			expectedMsg: []string{"rate limit reached"},
 		},
 	}
-	chatbot := BaseChatBot{}
-	mockSender := MockSender{}
-	chatbot.logger = slog.New(slog.DiscardHandler)
-	chatbot.sender = &mockSender
-	chatbot.ReplyFunc = func(m string, s *discordgo.Session, mc *discordgo.MessageCreate) (string, error) {
-		return "Test reply", nil
-	}
+
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			chatbot.HandleReply(test.session, test.message)
-			t.Log(mockSender.Messages)
-			got := mockSender.Messages[mockconstants.TestChannel][len(mockSender.Messages)-1]
-			if got != test.expectedMsg {
-				t.Errorf("expected reply %#v, got %#v", test.expectedMsg, got)
+			mockSender := &MockSender{}
+			bot := NewBot(
+				&mockResponder{replyFunc: test.replyFunc},
+				WithLogger(slog.New(slog.DiscardHandler)),
+				WithSender(mockSender),
+			)
+
+			bot.HandleMessage(newSession(), mentionedMsg())
+
+			got := mockSender.Messages[mockconstants.TestChannel]
+			if len(got) != len(test.expectedMsg) {
+				t.Fatalf("sent %d messages (%#v), want %d (%#v)", len(got), got, len(test.expectedMsg), test.expectedMsg)
+			}
+			for i := range got {
+				if got[i] != test.expectedMsg[i] {
+					t.Errorf("message[%d] = %#v, want %#v", i, got[i], test.expectedMsg[i])
+				}
 			}
 		})
 	}
