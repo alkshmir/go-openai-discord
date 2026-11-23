@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log/slog"
 	"net/http"
 	"testing"
 
@@ -16,35 +16,6 @@ import (
 	"github.com/ewohltman/discordgo-mock/mockstate"
 	"github.com/ewohltman/discordgo-mock/mockuser"
 )
-
-// MockLogger is a mock implementation of Logger for testing
-type MockLogger struct {
-	printLogs []string
-	fatalLogs []string
-}
-
-func (m *MockLogger) Println(v ...any) {
-	msg := fmt.Sprint(v...)
-	fmt.Println(msg)
-	m.printLogs = append(m.printLogs, msg)
-}
-
-func (m *MockLogger) Printf(s string, v ...any) {
-	fmt.Printf(s, v...)
-}
-
-func (m *MockLogger) Fatal(v ...any) {
-	msg := fmt.Sprint(v...)
-	m.fatalLogs = append(m.fatalLogs, msg)
-}
-
-func (m *MockLogger) GetPrintLogs() []string {
-	return m.printLogs
-}
-
-func (m *MockLogger) GetFatalLogs() []string {
-	return m.fatalLogs
-}
 
 // mock implementation of sender interface
 type MockSender struct {
@@ -230,9 +201,8 @@ func TestHandleReply(t *testing.T) {
 		},
 	}
 	chatbot := BaseChatBot{}
-	mockLogger := MockLogger{}
 	mockSender := MockSender{}
-	chatbot.logger = &mockLogger
+	chatbot.logger = slog.New(slog.DiscardHandler)
 	chatbot.sender = &mockSender
 	chatbot.ReplyFunc = func(m string, s *discordgo.Session, mc *discordgo.MessageCreate) (string, error) {
 		return "Test reply", nil
