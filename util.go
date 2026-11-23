@@ -1,92 +1,141 @@
 package main
 
 import (
-	"container/list"
 	"strings"
 	"unicode/utf8"
 )
 
-type Stack struct {
-	v *list.List
-}
-
-func NewStack() *Stack {
-	return &Stack{v: list.New()}
-}
-
-func (s *Stack) Push(v interface{}) {
-	s.v.PushBack(v)
-}
-
-func (s *Stack) Pop() interface{} {
-	b := s.v.Back()
-	if b == nil {
-		return nil
-	}
-	return s.v.Remove(b)
-}
-
-func (s *Stack) Len() int {
-	return s.v.Len()
-}
+const closingFence = "\n```"
 
 func splitMessage(input string, maxLen int) []string {
-	lines := strings.Split(input, "\n")
-	var results []string
-	var currentMessage strings.Builder
-
-	codeStack := NewStack()
-	backupStack := NewStack()
-	currentLength := 0
-
-	for _, line := range lines {
-		currentLength += utf8.RuneCountInString(line) + 1
-
-		trimmedLine := strings.TrimRight(line, " ")
-		if strings.HasPrefix(trimmedLine, "```") {
-			if codeStack.Len() > 0 {
-				// Pop from stack
-				codeStack.Pop()
-				currentLength -= 4
-			} else {
-				// Push to stack
-				codeStack.Push(trimmedLine)
-				currentLength += 4
-			}
-		}
-
-		if currentLength+len(line)+1 > maxLen {
-			if codeStack.Len() > 0 {
-				// We are in a code block, add the code block closure
-				for codeStack.Len() != 0 {
-					currentMessage.WriteString("```\n")
-					backupStack.Push(codeStack.Pop())
-				}
-				results = append(results, currentMessage.String())
-				currentMessage.Reset()
-				currentLength = 0
-
-				for backupStack.Len() != 0 {
-					v := backupStack.Pop()
-					currentMessage.WriteString(v.(string) + "\n")
-					currentLength += utf8.RuneCountInString(v.(string)) + 4
-					codeStack.Push(v)
-				}
-
-			} else {
-				results = append(results, currentMessage.String())
-				currentMessage.Reset()
-				currentLength = 0
-			}
-		}
-
-		currentMessage.WriteString(line + "\n")
-		currentLength += utf8.RuneCountInString(line) + 1
+	if input == "" || maxLen <= 0 {
+		return nil
 	}
 
-	if currentMessage.Len() > 0 {
+	const closingFenceLen = 4 // len("\n```")
 
-		results = append(results, currentMessage.String())
+	lines := strings.Split(input, "\n")
+	var results []string
+	var buf strings.Builder
+	curLen := 0
+	openFence := ""
+	hasContentSinceFence := false
+
+	appendLine := func(s string, runeLen int) {
+		if curLen > 0 {
+			buf.WriteByte('\n')
+			curLen++
+		}
+		buf.WriteString(s)
+		curLen += runeLen
+	}
+
+	flush := func() {
+		if curLen == 0 {
+			return
+		}
+		if openFence != "" {
+			buf.WriteString(closingFence)
+		}
+		results = append(results, buf.String())
+		buf.Reset()
+		curLen = 0
+		if openFence != "" {
+			buf.WriteString(openFence)
+			curLen = utf8.RuneCountInString(openFence)
+			hasContentSinceFence = false
+		}
+	}
+
+	for _, line := range lines {
+		trimmedRight := strings.TrimRight(line, " ")
+		isFence := strings.HasPrefix(trimmedRight, "```")
+		lineLen := utf8.RuneCountInString(line)
+
+		// Closing an open code block.
+		if isFence && openFence != "" {
+			sep := 0
+			if curLen > 0 {
+				sep = 1
+			}
+			if curLen > 0 && curLen+sep+lineLen > maxLen {
+				flush()
+			}
+			appendLine(line, lineLen)
+			openFence = ""
+			hasContentSinceFence = false
+			continue
+		}
+
+		// Opening a new code block.
+		if isFence && openFence == "" {
+			// If there is existing content and not enough room for this fence,
+			// at least 1 character of content, and the closing fence, flush first.
+			if curLen > 0 && curLen+1+lineLen+1+1+closingFenceLen > maxLen {
+				flush()
+			}
+			appendLine(line, lineLen)
+			openFence = trimmedRight
+			hasContentSinceFence = false
+			continue
+		}
+
+		// Regular line (either inside or outside a code block).
+		reserve := 0
+		if openFence != "" {
+			reserve = closingFenceLen
+		}
+
+		sep := 0
+		if curLen > 0 {
+			sep = 1
+		}
+
+		// If the line does not fit in the current chunk, flush if there is already content to flush.
+		if curLen+sep+lineLen+reserve > maxLen && curLen > 0 && (openFence == "" || hasContentSinceFence) {
+			flush()
+			sep = 0
+			if curLen > 0 {
+				sep = 1
+			}
+		}
+
+		if curLen+sep+lineLen+reserve <= maxLen {
+			appendLine(line, lineLen)
+			if openFence != "" {
+				hasContentSinceFence = true
+			}
+			continue
+		}
+
+		// Single line itself exceeds the remaining capacity of a chunk; split by runes.
+		runes := []rune(line)
+		for len(runes) > 0 {
+			sep = 0
+			if curLen > 0 {
+				sep = 1
+			}
+			avail := maxLen - curLen - sep - reserve
+			if avail < 1 {
+				avail = 1
+			}
+			if avail > len(runes) {
+				avail = len(runes)
+			}
+			part := string(runes[:avail])
+			appendLine(part, avail)
+			if openFence != "" {
+				hasContentSinceFence = true
+			}
+			runes = runes[avail:]
+			if len(runes) > 0 {
+				flush()
+			}
+		}
+	}
+
+	if curLen > 0 {
+		results = append(results, buf.String())
 	}
 
 	return results

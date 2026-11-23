@@ -218,7 +218,7 @@ func TestHandleMessage(t *testing.T) {
 			replyFunc: func(ctx context.Context, channelID, prompt string) (string, error) {
 				return "Test reply", nil
 			},
-			expectedMsg: []string{"Test reply\n"},
+			expectedMsg: []string{"Test reply"},
 		},
 		{
 			name: "ContextTooLong",
