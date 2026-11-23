@@ -5,9 +5,14 @@ import (
 	"errors"
 	"log/slog"
 	"regexp"
+	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
+
+// Discord clears the typing indicator after ~10s, so refresh it slightly earlier.
+const defaultTypingInterval = 8 * time.Second
 
 // Responder handles generating replies and managing conversation state per channel.
 type Responder interface {
@@ -19,6 +24,7 @@ type Responder interface {
 type Sender interface {
 	ChannelSend(s *discordgo.Session, channelID string, content string) (*discordgo.Message, error)
 	ReplySend(s *discordgo.Session, channelID string, content string, reference *discordgo.MessageReference) (*discordgo.Message, error)
+	Typing(ctx context.Context, s *discordgo.Session, channelID string) error
 }
 
 type DefaultSender struct {
@@ -33,6 +39,10 @@ func (ds *DefaultSender) ChannelSend(s *discordgo.Session, channelID string, con
 func (ds *DefaultSender) ReplySend(s *discordgo.Session, channelID string, content string, reference *discordgo.MessageReference) (*discordgo.Message, error) {
 	ds.logger.Info("sending reply", "channel_id", channelID, "content", content)
 	return s.ChannelMessageSendReply(channelID, content, reference)
+}
+
+func (ds *DefaultSender) Typing(ctx context.Context, s *discordgo.Session, channelID string) error {
+	return s.ChannelTyping(channelID, discordgo.WithContext(ctx))
 }
 
 type BotOption func(*Bot)
@@ -53,12 +63,16 @@ type Bot struct {
 	responder Responder
 	logger    *slog.Logger
 	sender    Sender
+	// Interval to re-send Discord's typing indicator while waiting for a reply
+	// (defaults to defaultTypingInterval; overridable in tests).
+	typingInterval time.Duration
 }
 
 func NewBot(responder Responder, opts ...BotOption) *Bot {
 	b := &Bot{
-		responder: responder,
-		logger:    slog.Default(),
+		responder:      responder,
+		logger:         slog.Default(),
+		typingInterval: defaultTypingInterval,
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -88,7 +102,15 @@ func (bot *Bot) HandleMessage(s *discordgo.Session, m *discordgo.MessageCreate) 
 
 	content := removeMention(m.Content)
 
-	reply, err := bot.responder.Reply(context.Background(), m.ChannelID, content)
+	ctx := context.Background()
+	stopTyping := bot.startTyping(ctx, s, m.ChannelID)
+	defer stopTyping()
+
+	reply, err := bot.responder.Reply(ctx, m.ChannelID, content)
+	// Stop the typing loop before sending any reply or error message;
+	// relying only on defer could let a late typing request fire after
+	// ChannelSend and leave the typing indicator stuck on Discord.
+	stopTyping()
 	if err != nil {
 		bot.handleReplyError(s, m.ChannelID, err)
 		return
@@ -99,6 +121,51 @@ func (bot *Bot) HandleMessage(s *discordgo.Session, m *discordgo.MessageCreate) 
 		if _, err := bot.sender.ChannelSend(s, m.ChannelID, chunk); err != nil {
 			bot.logger.Error("failed to send message", "channel_id", m.ChannelID, "error", err)
 		}
+	}
+}
+
+func (bot *Bot) startTyping(ctx context.Context, s *discordgo.Session, channelID string) func() {
+	interval := bot.typingInterval
+	if interval <= 0 {
+		interval = defaultTypingInterval
+	}
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		if err := bot.sender.Typing(typingCtx, s, channelID); err != nil {
+			if !errors.Is(err, context.Canceled) {
+				bot.logger.Warn("failed to send typing indicator", "channel_id", channelID, "error", err)
+			}
+			return
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+				if err := bot.sender.Typing(typingCtx, s, channelID); err != nil {
+					if !errors.Is(err, context.Canceled) {
+						bot.logger.Warn("failed to refresh typing indicator", "channel_id", channelID, "error", err)
+					}
+					return
+				}
+			}
+		}
+	}()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
 	}
 }
 
